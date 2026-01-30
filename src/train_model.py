@@ -6,14 +6,22 @@ import os
 import numpy as np
 
 # CONFIG
-DATA_FILE = './data/hand_data.csv'
+DATA_FILE = './data/hand_data_clean.csv'
 MODEL_FILE = './model/sign_language_model.p'
 
 if not os.path.exists('./model'):
     os.makedirs('./model')
 
 print("Loading data...")
-df = pd.read_csv(DATA_FILE)
+try:
+    df = pd.read_csv(DATA_FILE)
+except FileNotFoundError:
+    print(f"ERROR: {DATA_FILE} not found. Did you run collect_custom.py?")
+    exit()
+
+# Sanity Check: Print what classes we found
+labels = df.iloc[:, 0].unique()
+print(f"Found {len(labels)} classes: {labels}")
 
 # Separate Features (Landmarks) and Labels
 X = df.iloc[:, 1:].values  # All columns except the first
@@ -23,6 +31,7 @@ print(f"Data Loaded: {len(df)} samples with {X.shape[1]} features.")
 print(f"Unique labels: {np.unique(y)}")
 
 # Split Data
+<<<<<<< HEAD
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
@@ -69,6 +78,23 @@ model_dict = {
 
 with open(MODEL_FILE, 'wb') as f:
     pickle.dump(model_dict, f)
+=======
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+# Train Model
+print("Training Random Forest...")
+model = RandomForestClassifier()
+model.fit(X_train, y_train)
+
+# Evaluate
+score = model.score(X_test, y_test)
+print(f"Model Accuracy: {score * 100:.2f}%")
+
+# --- CRITICAL FIX BELOW ---
+# We save as a dictionary to match inference.py structure
+with open(MODEL_FILE, 'wb') as f:
+    pickle.dump({'model': model}, f)
+>>>>>>> 4dafe7fc9c17282855b050b7c10d65bbd0016d18
 
 print(f"\n✅ SUCCESS: Model saved to {MODEL_FILE}")
 print(f"   - Model type: {type(model).__name__}")
