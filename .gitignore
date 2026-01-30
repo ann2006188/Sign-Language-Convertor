@@ -1,0 +1,15 @@
+# Ignore Virtual Env
+venv/
+env/
+.env
+
+# Ignore Python Cache
+__pycache__/
+*.pyc
+
+# Ignore local datasets (Optional: keep this if data is huge, remove if small)
+# data/
+
+# Ignore IDE settings
+.vscode/
+.idea/
