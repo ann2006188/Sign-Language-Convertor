@@ -6,563 +6,636 @@ import numpy as np
 import sys
 import os
 import time
-from collections import Counter
-import pickle
-import mediapipe as mp
+import random
+from pathlib import Path
+import glob
+from PIL import Image
 
+# Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
+
+try:
+    from sign_detector import SignDetector
+    from sentence_builder import SentenceBuilder
+except ImportError:
+    st.error("❌ Could not import 'src' modules.")
+    st.stop()
 
 # Page config
 st.set_page_config(
-    layout="wide",
-    page_title="ASL Converter",
-    page_icon="🪧"
+    layout="wide", 
+    page_title="ASL Converter Pro", 
+    page_icon="🤟",
+    initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# ============================================
+# MODERN CSS STYLING
+# ============================================
 st.markdown("""
     <style>
-    .big-font {
-        font-size:50px !important;
-        font-weight: bold;
-        color: #00ff00;
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap');
+    
+    /* Global Theme */
+    :root {
+        --primary-glow: #00ffff;
+        --secondary-glow: #ff00ff;
+        --dark-bg: #0a0a0a;
+        --card-bg: #151515;
+        --text-primary: #ffffff;
+        --text-secondary: #a0a0a0;
     }
-    .word-display {
-        font-size:35px !important;
-        font-weight: bold;
-        color: #ffff00;
-        background-color: #333;
-        padding: 10px;
-        border-radius: 5px;
+    
+    /* Main Container */
+    .main {
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
     }
+    
+    /* Custom Headers */
+    .app-header {
+        font-family: 'Orbitron', sans-serif;
+        font-weight: 900;
+        font-size: 3.5rem;
+        text-align: center;
+        background: linear-gradient(135deg, #00ffff, #ff00ff, #ffff00);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-shadow: 0 0 30px rgba(0,255,255,0.5);
+        margin-bottom: 2rem;
+        animation: glow-pulse 3s ease-in-out infinite;
+    }
+    
+    @keyframes glow-pulse {
+        0%, 100% { filter: drop-shadow(0 0 10px rgba(0,255,255,0.7)); }
+        50% { filter: drop-shadow(0 0 25px rgba(255,0,255,0.9)); }
+    }
+    
+    /* Tab Navigation */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 20px;
+        background-color: rgba(21, 21, 21, 0.8);
+        padding: 15px;
+        border-radius: 15px;
+        backdrop-filter: blur(10px);
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        font-family: 'Space Mono', monospace;
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: var(--text-secondary);
+        background-color: transparent;
+        border: 2px solid transparent;
+        border-radius: 10px;
+        padding: 12px 25px;
+        transition: all 0.3s ease;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, rgba(0,255,255,0.2), rgba(255,0,255,0.2));
+        border: 2px solid var(--primary-glow);
+        color: var(--primary-glow);
+        box-shadow: 0 0 20px rgba(0,255,255,0.4);
+    }
+    
+    /* Sentence Display */
     .sentence-display {
-        font-size:25px !important;
-        color: #00ffff;
-        background-color: #222;
-        padding: 10px;
-        border-radius: 5px;
+        font-family: 'Space Mono', monospace;
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary-glow);
+        background: linear-gradient(135deg, rgba(0,255,255,0.1), rgba(255,0,255,0.1));
+        padding: 25px;
+        border-radius: 15px;
+        border: 2px solid var(--primary-glow);
+        min-height: 100px;
+        text-align: center;
+        box-shadow: 0 0 30px rgba(0,255,255,0.3);
+        backdrop-filter: blur(10px);
+        animation: border-glow 2s ease-in-out infinite;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
+    
+    @keyframes border-glow {
+        0%, 100% { box-shadow: 0 0 20px rgba(0,255,255,0.3); }
+        50% { box-shadow: 0 0 40px rgba(255,0,255,0.5); }
+    }
+    
+    /* Text Input Area */
+    .stTextArea textarea {
+        font-family: 'Space Mono', monospace;
+        font-size: 1.2rem;
+        background-color: rgba(21, 21, 21, 0.9);
+        color: var(--text-primary);
+        border: 2px solid var(--primary-glow);
+        border-radius: 10px;
+        padding: 15px;
+    }
+    
+    /* Buttons */
     .stButton>button {
-        width: 100%;
-        height: 60px;
-        font-size: 18px;
-        font-weight: bold;
+        font-family: 'Space Mono', monospace;
+        font-weight: 700;
+        height: 55px;
+        border-radius: 12px;
+        border: 2px solid var(--primary-glow);
+        background: linear-gradient(135deg, rgba(0,255,255,0.1), rgba(255,0,255,0.1));
+        color: var(--primary-glow);
+        transition: all 0.3s ease;
+        box-shadow: 0 0 15px rgba(0,255,255,0.2);
+    }
+    
+    .stButton>button:hover {
+        background: linear-gradient(135deg, rgba(0,255,255,0.3), rgba(255,0,255,0.3));
+        box-shadow: 0 0 30px rgba(0,255,255,0.6);
+        transform: translateY(-2px);
+    }
+    
+    /* Sign Image Display */
+    .sign-image-container {
+        background: linear-gradient(135deg, rgba(0,255,255,0.1), rgba(255,0,255,0.1));
+        border: 3px solid var(--primary-glow);
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 0 40px rgba(0,255,255,0.4);
+        text-align: center;
+        animation: image-pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes image-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.02); }
+    }
+    
+    /* Highlighted Text */
+    .highlight-current {
+        color: #ffff00;
+        font-weight: 900;
+        text-shadow: 0 0 10px rgba(255,255,0,0.8);
+        font-size: 1.3em;
+    }
+    
+    .text-preview {
+        font-family: 'Space Mono', monospace;
+        font-size: 1.8rem;
+        color: var(--text-primary);
+        background: rgba(21, 21, 21, 0.8);
+        padding: 20px;
+        border-radius: 12px;
+        border: 2px solid var(--secondary-glow);
+        margin: 20px 0;
+        text-align: center;
+        letter-spacing: 0.1em;
+    }
+    
+    /* Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0a0a0a 0%, #1a1a2e 100%);
+        border-right: 2px solid var(--primary-glow);
+    }
+    
+    [data-testid="stSidebar"] .stMarkdown h2 {
+        font-family: 'Orbitron', sans-serif;
+        color: var(--primary-glow);
+        text-shadow: 0 0 15px rgba(0,255,255,0.6);
+    }
+    
+    /* Camera Feed Border */
+    .camera-container {
+        border: 3px solid var(--primary-glow);
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 0 30px rgba(0,255,255,0.4);
+    }
+    
+    /* Status Indicators */
+    .status-live {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        background-color: #00ff00;
+        border-radius: 50%;
+        animation: blink 1s ease-in-out infinite;
+        margin-right: 8px;
+    }
+    
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+    
+    /* Sliders */
+    .stSlider {
+        padding: 10px 0;
+    }
+    
+    /* Progress Elements */
+    .stProgress > div > div {
+        background: linear-gradient(90deg, var(--primary-glow), var(--secondary-glow));
     }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🤟 ASL Converter")
-st.caption("Real-time Sign Language to Speech Conversion")
+# ============================================
+# UTILITY FUNCTIONS
+# ============================================
 
-# Sidebar controls
-mode = st.sidebar.radio(
-    "Select Mode",
-    ["👋 Sign → Text → Speech", "🎤 Speech → Text → Sign"]
+def get_sign_image(letter, raw_data_path):
+    """Get a random image for the given letter from raw_data"""
+    # Handle only alphabetic characters
+    if not letter.isalpha():
+        return None
+    
+    letter = letter.upper()
+    letter_folder = os.path.join(raw_data_path, letter)
+    
+    # Debug: Check if folder exists
+    if not os.path.exists(letter_folder):
+        st.warning(f"⚠️ Folder not found: {letter_folder}")
+        return None
+    
+    # Try multiple extensions with case variations
+    extensions = ["*.jpg", "*.JPG", "*.png", "*.PNG", "*.jpeg", "*.JPEG"]
+    images = []
+    
+    for ext in extensions:
+        images.extend(glob.glob(os.path.join(letter_folder, ext)))
+    
+    # Debug: Show what we found
+    if not images:
+        st.warning(f"⚠️ No images found in: {letter_folder}")
+        return None
+    
+    return random.choice(images)
+
+def generate_audio(text):
+    """Generate audio from text using gTTS"""
+    if not text.strip():
+        return None
+    try:
+        tts = gTTS(text, lang='en')
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+            tts.save(f.name)
+            return f.name
+    except Exception as e:
+        st.error(f"Audio generation error: {e}")
+        return None
+
+# ============================================
+# SESSION STATE INITIALIZATION
+# ============================================
+
+# Path Configuration - Get raw_data path relative to this script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)  # Go up one level from gui/ to project root
+RAW_DATA_PATH = os.path.join(PROJECT_ROOT, "raw_data")
+
+# Validate raw_data path exists
+if not os.path.exists(RAW_DATA_PATH):
+    st.error(f"❌ Raw data folder not found at: {RAW_DATA_PATH}")
+    st.info("Expected structure: Sign-language-convertor/raw_data/A, B, C, etc.")
+    st.stop()
+
+if 'builder' not in st.session_state:
+    st.session_state.builder = SentenceBuilder()
+if 'camera_active' not in st.session_state:
+    st.session_state.camera_active = False
+if 'text_input' not in st.session_state:
+    st.session_state.text_input = ""
+if 'sign_display_index' not in st.session_state:
+    st.session_state.sign_display_index = 0
+if 'is_displaying_signs' not in st.session_state:
+    st.session_state.is_displaying_signs = False
+if 'current_text_for_signs' not in st.session_state:
+    st.session_state.current_text_for_signs = ""
+
+# ============================================
+# HEADER
+# ============================================
+st.markdown('<h1 class="app-header">🤟 ASL CONVERTER PRO</h1>', unsafe_allow_html=True)
+
+# ============================================
+# SIDEBAR SETTINGS
+# ============================================
+st.sidebar.markdown("## ⚙️ SETTINGS")
+
+# Confidence Threshold
+conf_threshold = st.sidebar.slider(
+    "🎯 Detection Confidence", 
+    min_value=0.0, max_value=1.0, value=0.5, step=0.05
+)
+
+# Hold Time for Sign Detection
+hold_time_sec = st.sidebar.slider(
+    "⏱️ Sign Hold Time (sec)", 
+    min_value=0.1, max_value=2.0, value=0.5, step=0.1
+)
+
+# Display Duration for Text-to-Sign
+display_duration = st.sidebar.slider(
+    "🖼️ Sign Display Duration (sec)", 
+    min_value=0.5, max_value=3.0, value=1.5, step=0.1
 )
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### Settings")
+st.sidebar.markdown("### 📊 STATISTICS")
+st.sidebar.metric("Current Sentence Length", len(st.session_state.builder.sentence))
 
-# Text-to-speech function
-def speak(text):
-    """Generate and play speech from text"""
-    try:
-        tts = gTTS(text, lang='en', slow=False)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-            tts.save(f.name)
-            st.audio(f.name, format='audio/mp3', autoplay=True)
-        time.sleep(0.5)
-        try:
-            os.unlink(f.name)
-        except:
-            pass
-    except Exception as e:
-        st.error(f"Speech error: {e}")
+# Update Builder Logic
+st.session_state.builder.THRESHOLD = int(hold_time_sec * 30)
+st.session_state.builder.REPEAT_THRESHOLD = int(hold_time_sec * 30) * 2
 
-# Enhanced Sign Detector Class
-class EnhancedSignDetector:
-    def __init__(self, model_path, min_detection_confidence=0.4, min_tracking_confidence=0.4):
-        # Load model
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model not found at {model_path}")
-        
-        model_dict = pickle.load(open(model_path, 'rb'))
-        
-        if isinstance(model_dict, dict):
-            self.model = model_dict['model']
-            self.labels = model_dict.get('labels', {})
-        else:
-            self.model = model_dict
-            self.labels = {}
-        
-        # MediaPipe setup
-        self.mp_hands = mp.solutions.hands
-        self.mp_draw = mp.solutions.drawing_utils
-        self.mp_drawing_styles = mp.solutions.drawing_styles
-        self.min_detection_confidence = min_detection_confidence
-        self.min_tracking_confidence = min_tracking_confidence
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=1,
-            min_detection_confidence=self.min_detection_confidence,
-            min_tracking_confidence=self.min_tracking_confidence
-        )
-        
-        # Prediction smoothing
-        self.prediction_buffer = []
-        self.buffer_size = 5
-    
-    def update_confidence(self, min_detection_confidence, min_tracking_confidence):
-        """Update confidence thresholds and recreate hands object"""
-        self.min_detection_confidence = min_detection_confidence
-        self.min_tracking_confidence = min_tracking_confidence
-        self.hands.close()
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=1,
-            min_detection_confidence=self.min_detection_confidence,
-            min_tracking_confidence=self.min_tracking_confidence
-        )
-        
-    def predict(self, frame, return_confidence=False, draw_landmarks=True):
-        """Predict sign with confidence and optional landmark drawing"""
-        if frame is None or frame.size == 0:
-            if return_confidence:
-                return None, 0.0
-            return None
-            
-        try:
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.hands.process(rgb_frame)
-            
-            if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
-                    # Draw landmarks
-                    if draw_landmarks:
-                        self.mp_draw.draw_landmarks(
-                            frame,
-                            hand_landmarks,
-                            self.mp_hands.HAND_CONNECTIONS,
-                            self.mp_drawing_styles.get_default_hand_landmarks_style(),
-                            self.mp_drawing_styles.get_default_hand_connections_style()
-                        )
-                    
-                    # Extract and normalize features
-                    data = []
-                    x_ = [lm.x for lm in hand_landmarks.landmark]
-                    y_ = [lm.y for lm in hand_landmarks.landmark]
-                    
-                    min_x, max_x = min(x_), max(x_)
-                    min_y, max_y = min(y_), max(y_)
-                    
-                    for lm in hand_landmarks.landmark:
-                        norm_x = (lm.x - min_x) / (max_x - min_x + 1e-6)
-                        norm_y = (lm.y - min_y) / (max_y - min_y + 1e-6)
-                        data.extend([norm_x, norm_y])
-                    
-                    # Predict
-                    prediction = self.model.predict([np.asarray(data)])
-                    predicted_char = prediction[0]
-                    
-                    # Get confidence
-                    try:
-                        proba = self.model.predict_proba([np.asarray(data)])
-                        confidence = np.max(proba)
-                    except:
-                        confidence = 1.0
-                    
-                    # Smooth predictions
-                    self.prediction_buffer.append(predicted_char)
-                    if len(self.prediction_buffer) > self.buffer_size:
-                        self.prediction_buffer.pop(0)
-                    
-                    if len(self.prediction_buffer) >= 3:
-                        most_common = Counter(self.prediction_buffer).most_common(1)[0][0]
-                        if return_confidence:
-                            return most_common, confidence
-                        return most_common
-                    
-                    if return_confidence:
-                        return predicted_char, confidence
-                    return predicted_char
-            
-            self.prediction_buffer = []
-        except Exception as e:
-            print(f"Prediction error: {e}")
-        
-        if return_confidence:
-            return None, 0.0
-        return None
-    
-    def get_hand_bbox(self, frame):
-        """Get bounding box of detected hand"""
-        if frame is None or frame.size == 0:
-            return None
-            
-        try:
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.hands.process(rgb_frame)
-            
-            if results.multi_hand_landmarks:
-                h, w, _ = frame.shape
-                hand_landmarks = results.multi_hand_landmarks[0]
-                
-                x_coords = [lm.x * w for lm in hand_landmarks.landmark]
-                y_coords = [lm.y * h for lm in hand_landmarks.landmark]
-                
-                x_min, x_max = int(min(x_coords)), int(max(x_coords))
-                y_min, y_max = int(min(y_coords)), int(max(y_coords))
-                
-                padding = 20
-                x_min = max(0, x_min - padding)
-                y_min = max(0, y_min - padding)
-                x_max = min(w, x_max + padding)
-                y_max = min(h, y_max + padding)
-                
-                return (x_min, y_min, x_max - x_min, y_max - y_min)
-        except:
-            pass
-        
-        return None
-    
-    def close(self):
-        self.hands.close()
-
-# Load detector
+# Load Detector
 @st.cache_resource
 def load_detector():
-    try:
-        model_path = os.path.join(os.path.dirname(__file__), '../model/sign_language_model.p')
-        return EnhancedSignDetector(model_path=model_path)
-    except FileNotFoundError:
-        st.error("❌ Model not found. Please train the model first by running `train_model.py`")
-        st.stop()
+    return SignDetector()
 
 detector = load_detector()
+detector.hands.min_detection_confidence = conf_threshold
 
-# ===== SIGN TO SPEECH MODE =====
-if mode == "👋 Sign → Text → Speech":
-    st.markdown("---")
-    
-    # Settings - placed BEFORE camera starts
-    st.sidebar.markdown("### Detection Settings")
-    confidence_threshold = st.sidebar.slider(
-        "Confidence Threshold", 
-        0.3, 1.0, 0.4, 0.05,
-        help="Minimum confidence for predictions",
-        key="confidence_slider"
-    )
-    
-    char_hold_time = st.sidebar.slider(
-        "Character Hold Time (sec)", 
-        0.5, 3.0, 1.5, 0.1,
-        help="How long to hold a sign before adding to word",
-        key="hold_time_slider"
-    )
-    
-    show_landmarks = st.sidebar.checkbox("Show Hand Landmarks", value=True, key="landmarks_checkbox")
-    
-    # Update detector confidence
-    detector.update_confidence(confidence_threshold, confidence_threshold)
-    
-    # Create columns for layout
+# ============================================
+# TAB NAVIGATION
+# ============================================
+tab1, tab2 = st.tabs(["📹 SIGN → TEXT", "✍️ TEXT → SIGN"])
+
+# ============================================
+# TAB 1: SIGN TO TEXT CONVERSION
+# ============================================
+with tab1:
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.subheader("📹 Live Camera Feed")
+        st.markdown("### 📹 LIVE CAMERA FEED")
+        
+        # Camera Controls
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c1:
+            start_btn = st.button("▶️ START CAMERA", use_container_width=True)
+            if start_btn:
+                st.session_state.camera_active = True
+                st.rerun()
+        with c2:
+            stop_btn = st.button("⏹️ STOP CAMERA", use_container_width=True)
+            if stop_btn:
+                st.session_state.camera_active = False
+                st.rerun()
+        with c3:
+            convert_to_sign_btn = st.button("🔄 CONVERT TO SIGN", use_container_width=True)
+            if convert_to_sign_btn:
+                # Transfer current sentence to text-to-sign
+                st.session_state.current_text_for_signs = st.session_state.builder.sentence
+                st.session_state.sign_display_index = 0
+                st.session_state.is_displaying_signs = True
+                st.success("✅ Switched to TEXT → SIGN mode!")
+                time.sleep(1)
+                st.rerun()
+        
+        # Camera Feed Container
+        st.markdown('<div class="camera-container">', unsafe_allow_html=True)
         stframe = st.empty()
+        st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.subheader("📝 Recognition Results")
-        current_sign_placeholder = st.empty()
-        confidence_placeholder = st.empty()
+        st.markdown("### 📝 DETECTED TEXT")
         
-        st.markdown("### Current Word")
-        word_placeholder = st.empty()
+        # Status Indicator
+        if st.session_state.camera_active:
+            st.markdown('<span class="status-live"></span><b>LIVE</b>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span style="color: #ff4444;">●</span> <b>OFFLINE</b>', unsafe_allow_html=True)
         
-        st.markdown("### Completed Sentence")
-        sentence_placeholder = st.empty()
-        
-        # Audio placeholder
-        audio_placeholder = st.empty()
-        
-        # Control buttons
         st.markdown("---")
-        st.markdown("#### 🎯 Word Controls")
+        
+        # Text Display Placeholder
+        text_placeholder = st.empty()
+        sound_placeholder = st.empty()
+        
+        # Initial Render
+        curr_sent = st.session_state.builder.sentence
+        text_placeholder.markdown(
+            f'<div class="sentence-display">{curr_sent if curr_sent else "Waiting for input..."}</div>', 
+            unsafe_allow_html=True
+        )
+        
+        st.markdown("---")
+        
+        # Action Buttons
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            speak_word_btn = st.button("🔊 Speak Word", help="Speak current word and add to sentence")
+            if st.button("🔊 SPEAK", use_container_width=True):
+                audio_file = generate_audio(st.session_state.builder.sentence)
+                if audio_file:
+                    sound_placeholder.audio(audio_file, format='audio/mp3', autoplay=True)
+                else:
+                    st.warning("No text to speak")
+        
         with col_btn2:
-            delete_letter_btn = st.button("⌫ Delete Letter", help="Remove last letter from word")
+            if st.button("⌫ BACKSPACE", use_container_width=True):
+                st.session_state.builder.sentence = st.session_state.builder.sentence[:-1]
+                st.rerun()
         
-        col_btn3, col_btn4 = st.columns(2)
-        with col_btn3:
-            clear_word_btn = st.button("🗑️ Clear Word", help="Clear current word without speaking")
-        with col_btn4:
-            add_space_btn = st.button("␣ Add Space", help="Add space to sentence")
-        
-        st.markdown("#### 📝 Sentence Controls")
-        col_btn5, col_btn6 = st.columns(2)
-        with col_btn5:
-            speak_sentence_btn = st.button("🔊 Speak Sentence", help="Speak entire sentence")
-        with col_btn6:
-            reset_all_btn = st.button("🔄 Reset All", help="Clear everything")
+        if st.button("🗑️ CLEAR ALL", use_container_width=True):
+            st.session_state.builder.clear()
+            st.rerun()
     
-    # Initialize session state
-    if 'current_word' not in st.session_state:
-        st.session_state.current_word = []
-    if 'sentence' not in st.session_state:
-        st.session_state.sentence = []
-    if 'last_stable_char' not in st.session_state:
-        st.session_state.last_stable_char = None
-    if 'last_char_time' not in st.session_state:
-        st.session_state.last_char_time = time.time()
-    if 'is_speaking' not in st.session_state:
-        st.session_state.is_speaking = False
-    
-    # Instructions
-    with st.expander("ℹ️ How to Use", expanded=False):
-        st.markdown("""
-        **Building Words:**
-        1. Hold a sign steady for ~1.5 seconds to add it to your current word
-        2. Watch the progress bar fill up as you hold
-        3. Letters accumulate in the "Current Word" box
-        
-        **Speaking:**
-        - Click "🔊 Speak Word" to hear the current word (adds to sentence)
-        - Click "🔊 Speak Sentence" to hear all words together
-        
-        **Editing:**
-        - "⌫ Delete Letter" removes the last letter
-        - "🗑️ Clear Word" removes the whole word without speaking
-        - "␣ Add Space" adds a space to separate words in sentence
-        - "🔄 Reset All" clears everything
-        """)
-    
-    # Start/Stop camera
-    run = st.checkbox("🎥 Start Camera", value=False, key="camera_toggle")
-    
-    if run:
+    # ============================================
+    # CAMERA LOOP
+    # ============================================
+    if st.session_state.camera_active:
         cap = cv2.VideoCapture(0)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         
-        # Status indicator
-        status_text = st.empty()
-        status_text.success("✅ Camera active - Hold signs steady to add letters")
-        
-        while run:
-            ret, frame = cap.read()
-            if not ret:
-                st.warning("⚠️ Failed to access camera.")
-                break
-            
-            # Validate frame
-            if frame is None or frame.size == 0:
-                continue
-            
-            try:
+        if not cap.isOpened():
+            st.error("❌ Could not open camera. Check permissions.")
+            st.session_state.camera_active = False
+        else:
+            while st.session_state.camera_active:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Flip frame for mirror effect
                 frame = cv2.flip(frame, 1)
+                
+                # Prediction
+                raw_char = detector.predict(frame)
+                
+                # Process with SentenceBuilder
+                sentence, event = st.session_state.builder.process(raw_char)
+                
+                # Update UI
+                text_placeholder.markdown(
+                    f'<div class="sentence-display">{sentence if sentence else "..."}</div>', 
+                    unsafe_allow_html=True
+                )
+                
+                # Auto-speak on event
+                if event == "SPEAK":
+                    audio_file = generate_audio(sentence)
+                    if audio_file:
+                        sound_placeholder.audio(audio_file, format='audio/mp3', autoplay=True)
+                
+                # Visual Progress Bar
                 H, W, _ = frame.shape
+                if st.session_state.builder.temp_char and st.session_state.builder.frame_count > 0:
+                    progress = st.session_state.builder.frame_count / st.session_state.builder.THRESHOLD
+                    bar_w = int(W * min(progress, 1.0))
+                    cv2.rectangle(frame, (0, H-20), (bar_w, H), (0, 255, 255), -1)
                 
-                # Ensure valid dimensions
-                if H <= 0 or W <= 0:
-                    continue
-                
-                # Get prediction (only if not speaking)
-                if not st.session_state.is_speaking:
-                    prediction, confidence = detector.predict(
-                        frame, 
-                        return_confidence=True, 
-                        draw_landmarks=show_landmarks
+                # Draw detected letter
+                if raw_char:
+                    cv2.putText(
+                        frame, f"SCAN: {raw_char}", 
+                        (30, 60), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 
+                        1.5, (0, 255, 255), 3
                     )
-                    
-                    # Update display with prediction
-                    if prediction and confidence > confidence_threshold:
-                        # Draw bounding box
-                        bbox = detector.get_hand_bbox(frame)
-                        if bbox:
-                            x, y, w, h = bbox
-                            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                        
-                        # Display current prediction
-                        color = (0, 255, 0)
-                        cv2.rectangle(frame, (0, 0), (W, 100), (0, 0, 0), -1)
-                        cv2.putText(frame, f"Sign: {prediction}", (20, 60),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, color, 3, cv2.LINE_AA)
-                        cv2.putText(frame, f"{confidence:.2f}", (W - 150, 60),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
-                        
-                        # Word formation logic
-                        if prediction == st.session_state.last_stable_char:
-                            if time.time() - st.session_state.last_char_time > char_hold_time:
-                                st.session_state.current_word.append(prediction)
-                                st.session_state.last_char_time = time.time()
-                                st.session_state.last_stable_char = None
-                                status_text.success(f"✅ Added '{prediction}' to word!")
-                        else:
-                            st.session_state.last_stable_char = prediction
-                            st.session_state.last_char_time = time.time()
-                        
-                        # Draw progress bar
-                        if st.session_state.last_stable_char:
-                            hold_progress = min(1.0, (time.time() - st.session_state.last_char_time) / char_hold_time)
-                            bar_width = int(300 * hold_progress)
-                            cv2.rectangle(frame, (20, H - 50), (20 + bar_width, H - 30), (0, 255, 0), -1)
-                            cv2.rectangle(frame, (20, H - 50), (320, H - 30), (255, 255, 255), 2)
-                            cv2.putText(frame, "Hold...", (340, H - 30),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
-                        
-                        # Update sidebar display
-                        current_sign_placeholder.markdown(f'<p class="big-font">{prediction}</p>', unsafe_allow_html=True)
-                        confidence_placeholder.progress(float(confidence))
-                        
-                    else:
-                        # No hand detected
-                        cv2.rectangle(frame, (0, 0), (W, 100), (0, 0, 0), -1)
-                        cv2.putText(frame, "No hand detected", (20, 60),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (128, 128, 128), 3, cv2.LINE_AA)
-                        current_sign_placeholder.markdown('<p style="color: gray;">Waiting for sign...</p>', unsafe_allow_html=True)
-                else:
-                    # Speaking indicator
-                    cv2.rectangle(frame, (0, 0), (W, 100), (255, 0, 0), -1)
-                    cv2.putText(frame, "SPEAKING...", (20, 60),
-                               cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3, cv2.LINE_AA)
                 
-                # Display current word and sentence
-                current_word_str = ''.join(st.session_state.current_word)
-                if current_word_str:
-                    word_placeholder.markdown(f'<p class="word-display">{current_word_str}_</p>', unsafe_allow_html=True)
-                else:
-                    word_placeholder.markdown('<p class="word-display">(empty)</p>', unsafe_allow_html=True)
+                # Display frame
+                stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
                 
-                sentence_str = ' '.join(st.session_state.sentence) if st.session_state.sentence else ''
-                if sentence_str:
-                    sentence_placeholder.markdown(f'<p class="sentence-display">{sentence_str}</p>', unsafe_allow_html=True)
-                else:
-                    sentence_placeholder.markdown('<p class="sentence-display">(empty)</p>', unsafe_allow_html=True)
-                
-                # Display frame with error handling
-                if frame is not None and frame.size > 0 and H > 0 and W > 0:
-                    stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB", use_column_width=True)
-                
-            except Exception as e:
-                print(f"Frame processing error: {e}")
-                continue
-            
-            # Handle button clicks
-            if speak_word_btn:
-                if st.session_state.current_word:
-                    word = ''.join(st.session_state.current_word)
-                    st.session_state.sentence.append(word)
-                    st.session_state.is_speaking = True
-                    with audio_placeholder:
-                        speak(word)
-                    st.session_state.current_word = []
-                    st.session_state.last_stable_char = None
-                    st.session_state.is_speaking = False
-                    status_text.success(f"🔊 Spoke: '{word}'")
-                else:
-                    status_text.warning("⚠️ No word to speak!")
-            
-            if delete_letter_btn:
-                if st.session_state.current_word:
-                    removed = st.session_state.current_word.pop()
-                    st.session_state.last_stable_char = None
-                    status_text.info(f"⌫ Deleted '{removed}'")
-                else:
-                    status_text.warning("⚠️ No letters to delete!")
-            
-            if clear_word_btn:
-                if st.session_state.current_word:
-                    cleared = ''.join(st.session_state.current_word)
-                    st.session_state.current_word = []
-                    st.session_state.last_stable_char = None
-                    status_text.info(f"🗑️ Cleared word: '{cleared}'")
-                else:
-                    status_text.warning("⚠️ Word already empty!")
-            
-            if add_space_btn:
-                st.session_state.sentence.append(' ')
-                status_text.info("Added space")
-            
-            if reset_all_btn:
-                st.session_state.current_word = []
-                st.session_state.sentence = []
-                st.session_state.last_stable_char = None
-                status_text.info("🔄 Reset everything")
-            
-            if speak_sentence_btn:
-                if st.session_state.sentence:
-                    full_sentence = ' '.join(st.session_state.sentence)
-                    st.session_state.is_speaking = True
-                    with audio_placeholder:
-                        speak(full_sentence)
-                    st.session_state.is_speaking = False
-                    status_text.success(f"🔊 Spoke sentence: '{full_sentence}'")
-                elif st.session_state.current_word:
-                    word = ''.join(st.session_state.current_word)
-                    st.session_state.is_speaking = True
-                    with audio_placeholder:
-                        speak(word)
-                    st.session_state.is_speaking = False
-                    status_text.success(f"🔊 Spoke current word: '{word}'")
-                else:
-                    status_text.warning("⚠️ Nothing to speak!")
-            
-            # Small delay
-            time.sleep(0.03)
-            
-            # Check if should stop (recheck the checkbox state)
-            run = st.session_state.get('camera_toggle', False)
+                # Small delay for UI responsiveness
+                time.sleep(0.01)
         
         cap.release()
-        status_text.info("📷 Camera stopped")
 
-# ===== SPEECH TO TEXT MODE =====
-else:
-    st.markdown("---")
-    st.subheader("🎤 Speech to Sign Display")
-    
-    st.markdown("### ASL Alphabet Reference")
-    st.info("💡 Type text below and we'll show you the corresponding ASL signs!")
-    
-    txt = st.text_input("Enter text to convert to ASL", placeholder="e.g., HELLO")
-    
-    col1, col2 = st.columns(2)
+# ============================================
+# TAB 2: TEXT TO SIGN CONVERSION
+# ============================================
+with tab2:
+    col1, col2 = st.columns([1, 2])
     
     with col1:
-        if st.button("🔊 Speak Text"):
-            if txt:
-                speak(txt)
+        st.markdown("### ✍️ INPUT TEXT")
+        
+        # Text Input
+        text_input = st.text_area(
+            "Enter text to convert to sign language:",
+            value=st.session_state.text_input,
+            height=200,
+            key="text_area_input"
+        )
+        st.session_state.text_input = text_input
+        
+        # Convert Button
+        if st.button("🔄 CONVERT TO SIGN", use_container_width=True, key="convert_btn"):
+            if text_input.strip():
+                st.session_state.current_text_for_signs = text_input.strip().upper()
+                st.session_state.sign_display_index = 0
+                st.session_state.is_displaying_signs = True
+                st.success("✅ Starting sign display...")
+                st.rerun()
             else:
-                st.warning("Please enter some text first!")
+                st.warning("⚠️ Please enter some text first!")
+        
+        # Clear Button
+        if st.button("🗑️ CLEAR INPUT", use_container_width=True, key="clear_input_btn"):
+            st.session_state.text_input = ""
+            st.session_state.is_displaying_signs = False
+            st.rerun()
     
     with col2:
-        if st.button("🤟 Show ASL Signs"):
-            if txt:
-                st.success(f"Showing ASL signs for: **{txt.upper()}**")
+        st.markdown("### 🖼️ SIGN LANGUAGE DISPLAY")
+        
+        # Debug: Show current paths
+        with st.expander("🔍 Debug Info"):
+            st.write(f"**Raw Data Path:** `{RAW_DATA_PATH}`")
+            st.write(f"**Path Exists:** {os.path.exists(RAW_DATA_PATH)}")
+            if os.path.exists(RAW_DATA_PATH):
+                folders = [f for f in os.listdir(RAW_DATA_PATH) if os.path.isdir(os.path.join(RAW_DATA_PATH, f))]
+                st.write(f"**Available Letter Folders:** {', '.join(sorted(folders))}")
+        
+        # Display Container
+        sign_image_placeholder = st.empty()
+        text_preview_placeholder = st.empty()
+        progress_placeholder = st.empty()
+        
+        if st.session_state.is_displaying_signs and st.session_state.current_text_for_signs:
+            text = st.session_state.current_text_for_signs
+            
+            # Display with highlighting
+            if st.session_state.sign_display_index < len(text):
+                current_letter = text[st.session_state.sign_display_index]
                 
-                st.markdown("### Sign Sequence:")
-                for char in txt.upper():
-                    if char.isalpha():
-                        st.markdown(f"**{char}** → _(Display ASL sign image here)_")
-                    elif char == ' ':
-                        st.markdown("**[SPACE]**")
+                # Build highlighted HTML
+                highlighted_text = ""
+                for i, char in enumerate(text):
+                    if i == st.session_state.sign_display_index:
+                        highlighted_text += f'<span class="highlight-current">{char}</span>'
+                    else:
+                        highlighted_text += char
                 
-                st.info("📝 Note: In a full implementation, actual ASL sign images/animations would be displayed here.")
+                text_preview_placeholder.markdown(
+                    f'<div class="text-preview">{highlighted_text}</div>',
+                    unsafe_allow_html=True
+                )
+                
+                # Get and display sign image
+                if current_letter.isalpha():
+                    img_path = get_sign_image(current_letter, RAW_DATA_PATH)
+                    
+                    if img_path and os.path.exists(img_path):
+                        # Use PIL to load and display image for better compatibility
+                        try:
+                            from PIL import Image
+                            img = Image.open(img_path)
+                            
+                            sign_image_placeholder.markdown(
+                                f'<div class="sign-image-container"><h2>Sign for: {current_letter}</h2></div>',
+                                unsafe_allow_html=True
+                            )
+                            sign_image_placeholder.image(
+                                img, 
+                                use_container_width=True
+                            )
+                        except Exception as e:
+                            sign_image_placeholder.error(f"❌ Error loading image: {e}")
+                            sign_image_placeholder.write(f"Path: {img_path}")
+                    else:
+                        sign_image_placeholder.warning(f"⚠️ No image found for '{current_letter}'")
+                        sign_image_placeholder.write(f"Looking in: {os.path.join(RAW_DATA_PATH, current_letter)}")
+                elif current_letter == ' ':
+                    # Handle spaces
+                    sign_image_placeholder.info(f"📝 SPACE")
+                else:
+                    # Handle special characters
+                    sign_image_placeholder.info(f"📝 Special character: '{current_letter}'")
+                
+                # Progress bar
+                progress = (st.session_state.sign_display_index + 1) / len(text)
+                progress_placeholder.progress(progress)
+                
+                # Auto-advance
+                time.sleep(display_duration)
+                st.session_state.sign_display_index += 1
+                st.rerun()
             else:
-                st.warning("Please enter some text first!")
-    
-    st.markdown("---")
-    st.markdown("""
-    ### How to use:
-    1. Type any text in the input box above
-    2. Click **Speak Text** to hear the text-to-speech output
-    3. Click **Show ASL Signs** to see the corresponding ASL alphabet sequence
-    4. For full implementation, integrate ASL sign images/GIFs for each letter
-    """)
+                # Completed
+                text_preview_placeholder.success("✅ Sign language conversion complete!")
+                sign_image_placeholder.balloons()
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button("🔁 RESTART", use_container_width=True):
+                        st.session_state.sign_display_index = 0
+                        st.rerun()
+                
+                with col_b:
+                    if st.button("🏠 BACK TO INPUT", use_container_width=True):
+                        st.session_state.is_displaying_signs = False
+                        st.rerun()
+        else:
+            # Default state
+            sign_image_placeholder.info("👈 Enter text and click 'CONVERT TO SIGN' to begin")
 
-# Footer
+# ============================================
+# FOOTER
+# ============================================
 st.markdown("---")
-st.caption("Built for 24hr Hackathon | AI for Assistive & Human-Centric Technology")
+st.markdown(
+    "<p style='text-align: center; color: #666; font-family: Space Mono, monospace;'>"
+    "🤟 ASL Converter Pro | Powered by MediaPipe & Streamlit | 2024"
+    "</p>",
+    unsafe_allow_html=True
+)
