@@ -35,9 +35,9 @@ All components are open-source and require no paid APIs.
 ##  Project Structure
     sign-language-assistive-ai/
     │
-    ├── vision/ # Hand detection & landmark extraction
-    ├── ml/ # Feature processing & gesture classification
-    ├── audio/ # Text-to-speech and speech-to-text modules
-    ├── ui/ # Streamlit application
+    ├── assets/ # Hand detection & landmark extraction
+    ├── data/ # Feature processing & gesture classification
+    ├── model/ # Text-to-speech and speech-to-text modules
     ├── requirements.txt
     └── README.md
+    
