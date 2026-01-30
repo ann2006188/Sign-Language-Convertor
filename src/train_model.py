@@ -6,7 +6,7 @@ import os
 import numpy as np
 
 # CONFIG
-DATA_FILE = './data/hand_data_clean.csv'
+DATA_FILE = './data/hand_data_clean.csv'  # <--- ENSURE THIS IS THE CLEAN DATA
 MODEL_FILE = './model/sign_language_model.p'
 
 if not os.path.exists('./model'):
@@ -16,31 +16,32 @@ print("Loading data...")
 try:
     df = pd.read_csv(DATA_FILE)
 except FileNotFoundError:
-    print(f"ERROR: {DATA_FILE} not found. Did you run collect_custom.py?")
+    print(f"ERROR: {DATA_FILE} not found. You must run 'src/fix_data.py' first!")
     exit()
 
 # Sanity Check: Print what classes we found
+# We grab the first column as labels
 labels = df.iloc[:, 0].unique()
 print(f"Found {len(labels)} classes: {labels}")
 
 # Separate Features (Landmarks) and Labels
-X = df.iloc[:, 1:].values  # All columns except the first
+X = df.iloc[:, 1:].values  # All columns except the first (features)
 y = df.iloc[:, 0].values   # The first column (label)
 
 print(f"Data Loaded: {len(df)} samples with {X.shape[1]} features.")
-print(f"Unique labels: {np.unique(y)}")
 
 # Split Data
-<<<<<<< HEAD
+# Stratify ensures we have equal amounts of 'A', 'B', 'C' in train and test
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
 # Train Model (Random Forest with optimized parameters)
+# These settings help prevent the "Everything is K" issue by reducing overfitting
 print("Training Model...")
 model = RandomForestClassifier(
-    n_estimators=100,      # More trees for better accuracy
-    max_depth=10,          # Prevent overfitting
+    n_estimators=100,      # More trees for stability
+    max_depth=10,          # Prevent memorizing exact noise
     min_samples_split=5,
     min_samples_leaf=2,
     random_state=42,
@@ -55,49 +56,18 @@ test_accuracy = model.score(X_test, y_test) * 100
 print(f"Training Accuracy: {train_accuracy:.2f}%")
 print(f"Testing Accuracy: {test_accuracy:.2f}%")
 
-# Check for overfitting
+# Check for overfitting warning
 if train_accuracy - test_accuracy > 10:
     print("⚠️ Warning: Model might be overfitting (train accuracy >> test accuracy)")
 
-# Get feature importances (optional - helps debug)
-feature_importance = model.feature_importances_
-print(f"\nTop 5 most important features: {np.argsort(feature_importance)[-5:][::-1]}")
-
-# Create labels dictionary (maps index to label)
-unique_labels = np.unique(y)
-labels_dict = {i: label for i, label in enumerate(unique_labels)}
-
-# Save Model as Dictionary (FIXED!)
+# Save Model
+# We save it as a dictionary so inference.py can load it easily
 model_dict = {
     'model': model,
-    'labels': labels_dict,
-    'accuracy': test_accuracy,
-    'n_features': X.shape[1],
-    'n_samples': len(df)
+    'classes': labels  # Saving the class list just in case we need it later
 }
 
 with open(MODEL_FILE, 'wb') as f:
     pickle.dump(model_dict, f)
-=======
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-
-# Train Model
-print("Training Random Forest...")
-model = RandomForestClassifier()
-model.fit(X_train, y_train)
-
-# Evaluate
-score = model.score(X_test, y_test)
-print(f"Model Accuracy: {score * 100:.2f}%")
-
-# --- CRITICAL FIX BELOW ---
-# We save as a dictionary to match inference.py structure
-with open(MODEL_FILE, 'wb') as f:
-    pickle.dump({'model': model}, f)
->>>>>>> 4dafe7fc9c17282855b050b7c10d65bbd0016d18
 
 print(f"\n✅ SUCCESS: Model saved to {MODEL_FILE}")
-print(f"   - Model type: {type(model).__name__}")
-print(f"   - Test accuracy: {test_accuracy:.2f}%")
-print(f"   - Number of classes: {len(unique_labels)}")
-print(f"   - Classes: {unique_labels}")
