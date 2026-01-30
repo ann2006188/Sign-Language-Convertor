@@ -13,3 +13,6 @@ __pycache__/
 # Ignore IDE settings
 .vscode/
 .idea/
+
+# Ignore huge data
+raw_data/
