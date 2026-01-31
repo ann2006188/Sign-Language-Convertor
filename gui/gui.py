@@ -839,7 +839,7 @@ with tab4:
 st.markdown("---")
 st.markdown(
     "<p style='text-align: center; color: #64748b; font-family: Inter, sans-serif; font-size: 0.875rem;'>"
-    "ASL Converter Pro © 2024 | Powered by MediaPipe, Whisper & Streamlit"
+    "ASL Converter Pro © 2026 | Powered by MediaPipe, Whisper & Streamlit"
     "</p>",
     unsafe_allow_html=True
 )
