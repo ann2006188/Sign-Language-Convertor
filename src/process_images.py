@@ -1,42 +1,50 @@
 import os
 import cv2
+import mediapipe as mp
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
 import csv
-import mediapipe as mp  # <--- STANDARD IMPORT
-
-# Initialize MediaPipe
-mp_hands = mp.solutions.hands  # <--- THIS WILL WORK NOW
-hands = mp_hands.Hands(static_image_mode=True, max_num_hands=1, min_detection_confidence=0.5)
 
 # === CONFIGURATION ===
-DATA_DIR = './raw_data'
-OUTPUT_FILE = './data/hand_data.csv'
-LIMIT_PER_CLASS = 1000 
+DATA_DIR        = './raw_data'
+OUTPUT_FILE     = './data/hand_data.csv'
+LIMIT_PER_CLASS = 1000
+TASK_MODEL_PATH = './model/hand_landmarker.task'
 # =====================
 
-# Create the data directory if it doesn't exist
+# Initialize MediaPipe Tasks API (IMAGE mode — synchronous, good for static files)
+base_options = mp_python.BaseOptions(model_asset_path=TASK_MODEL_PATH)
+options      = mp_vision.HandLandmarkerOptions(
+    base_options=base_options,
+    running_mode=mp_vision.RunningMode.IMAGE,
+    num_hands=1,
+    min_hand_detection_confidence=0.5,
+    min_hand_presence_confidence=0.5,
+)
+hand_landmarker = mp_vision.HandLandmarker.create_from_options(options)
+
 os.makedirs('./data', exist_ok=True)
 
 print(f"Creating {OUTPUT_FILE}...")
-
-# Create the CSV file and write the header
 with open(OUTPUT_FILE, 'w', newline='') as f:
-    writer = csv.writer(f)
     header = ['label']
     for i in range(21):
         header.extend([f'x{i}', f'y{i}'])
-    writer.writerow(header)
+    csv.writer(f).writerow(header)
 
-# Check if raw_data exists
 if not os.path.exists(DATA_DIR):
     print(f"ERROR: Directory '{DATA_DIR}' not found.")
+    hand_landmarker.close()
     exit()
 
-# Get sorted list of all folders
-sorted_labels = sorted([d for d in os.listdir(DATA_DIR) 
-                       if os.path.isdir(os.path.join(DATA_DIR, d))])
+sorted_labels = sorted([
+    d for d in os.listdir(DATA_DIR)
+    if os.path.isdir(os.path.join(DATA_DIR, d))
+])
 
 if not sorted_labels:
     print(f"ERROR: No class folders found in '{DATA_DIR}'")
+    hand_landmarker.close()
     exit()
 
 print(f"Found {len(sorted_labels)} classes: {sorted_labels}\n")
@@ -44,53 +52,46 @@ print(f"Found {len(sorted_labels)} classes: {sorted_labels}\n")
 total_processed = 0
 
 for label in sorted_labels:
+    tag       = "[SPECIAL]" if label in ('space', 'del', 'nothing') else "Processing"
+    print(f"--> {tag}: {label}")
     class_dir = os.path.join(DATA_DIR, label)
-    
-    if label in ['space', 'del', 'nothing']:
-        print(f"--> [SPECIAL CLASS]: {label}")
-    else:
-        print(f"--> Processing: {label}")
-    
-    count = 0
-    skipped = 0
-    
-    images = [f for f in os.listdir(class_dir) 
+    count     = 0
+    skipped   = 0
+
+    images = [f for f in os.listdir(class_dir)
               if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
-    
+
     for img_name in images[:LIMIT_PER_CLASS]:
         img_path = os.path.join(class_dir, img_name)
-        
-        image = cv2.imread(img_path)
-        if image is None: 
+        image    = cv2.imread(img_path)
+        if image is None:
             skipped += 1
-            continue 
+            continue
 
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = hands.process(rgb_image)
+        rgb      = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mp_img   = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result   = hand_landmarker.detect(mp_img)
 
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                data = []
-                for lm in hand_landmarks.landmark:
-                    data.extend([lm.x, lm.y])
-                
-                with open(OUTPUT_FILE, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([label] + data)
-                
-                count += 1
+        if result.hand_landmarks:
+            landmarks = result.hand_landmarks[0]
+            data      = []
+            for lm in landmarks:
+                data.extend([lm.x, lm.y])
+            with open(OUTPUT_FILE, 'a', newline='') as f:
+                csv.writer(f).writerow([label] + data)
+            count += 1
         else:
             skipped += 1
-        
+
         if count > 0 and count % 200 == 0:
             print(f"    {count} processed...")
-    
+
     total_processed += count
-    print(f"    ✓ {count} saved, {skipped} skipped\n")
+    print(f"    {count} saved, {skipped} skipped\n")
 
-hands.close()
+hand_landmarker.close()
 
-print(f"\n{'='*50}")
+print("=" * 50)
 print(f"SUCCESS! Total: {total_processed} images")
 print(f"File: {OUTPUT_FILE}")
-print(f"{'='*50}")
+print("=" * 50)

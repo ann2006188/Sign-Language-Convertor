@@ -17,9 +17,9 @@ print(f"Processing {len(df)} samples...")
 data_clean = []
 
 for index, row in df.iterrows():
-    label = row[0]
+    label = row.iloc[0]
     # Get all landmarks
-    landmarks = row[1:].values.astype(float).reshape(-1, 2)
+    landmarks = row.iloc[1:].values.astype(float).reshape(-1, 2)
     
     # === WRIST-ANCHOR NORMALIZATION ===
     # 1. Wrist is always at index 0
